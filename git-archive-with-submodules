@@ -1,0 +1,159 @@
+#!/bin/bash
+me=$(basename $0)
+
+set -e
+
+function print_help {
+	echo
+	echo
+	echo "$me - create tgz from git repository, including submodules"
+	echo
+	echo "SYNOPSIS"
+	echo "	$me [commit-ish]"
+	echo "		if you define [commit-ish], the archive will be created based on whatever you define commit-ish to be."
+	echo "		Branch names, commit hash, etc. are acceptable."
+	echo "		Defaults to HEAD if not specified"
+	echo
+	echo OPTIONS
+	echo "	--include-changes"
+	echo "		include staged and unstaged changes in the archive"
+	echo "		NOTE: this flag makes sense only when archiving HEAD"
+	echo "	-o | --output-file <output_file>"
+	echo "		write archive to <output_file>."
+	echo "		Defaults to directory name of this git repository with .tgz suffix"
+	echo "	--prefix <prefix>/"
+	echo "		Prepend <prefix>/ to each filename in the archive."
+	echo "	-v | --verbose"
+	echo "		be verbose"
+	exit
+}
+
+REARRANGED_OPTIONS=$(getopt -o ho:v --long help,include-changes,output-file:,prefix:,verbose -- "$@")
+eval set -- "$REARRANGED_OPTIONS"
+
+COMMIT_ISH=HEAD
+while true
+do
+	case "$1" in
+		-h | --help ) print_help; shift ;;
+		--include-changes ) INCLUDE_CHANGES=1; shift ;;
+		-o | --output-file ) OUTPUT_FILE=$2; shift 2 ;;
+		--prefix ) PREFIX="$2"; shift 2 ;;
+		-v | --verbose ) VERBOSE=1; shift ;;
+		-- )
+			shift; # skip --
+			if [ -n "$1" ]
+			then
+				COMMIT_ISH=$1
+				shift # skip $1
+				if [ -n "$1" ]
+				then
+					echo "$me : Unexpected arguments: \"$@\" . exiting."; exit 1 ;
+				fi
+			fi
+			break;;
+		* ) echo "$me : Unexpected options: \"$@\" . exiting."; exit 1 ;;
+	esac
+done
+
+if [ $INCLUDE_CHANGES ] && [ $COMMIT_ISH != HEAD ]
+then
+	[ $VERBOSE ] && echo "$me : --include-changes flag makes no sense when archiving a commit-ish that is not HEAD. Ignoring."
+	INCLUDE_CHANGES=
+fi
+
+# we will suppose that we are inside the super-project.
+# To get this working from inside a submodule; we could get inspiration here:
+# https://stackoverflow.com/questions/7359204/git-command-line-know-if-in-submodule
+GITDIR=$(git rev-parse --show-toplevel)
+
+if [ ! $OUTPUT_FILE ]
+then
+	OUTPUT_FILE="$(basename $GITDIR).tgz"
+	[ $VERBOSE ] && echo "$me : output-file = $OUTPUT_FILE"
+fi
+
+touch $OUTPUT_FILE # otherwise realpath fails on debian7
+OUTPUT_FILE=$(realpath $OUTPUT_FILE)
+
+# store current directory and make sure to return here when ending the program
+CURRENT_DIR=$PWD
+# make a temporary directory and make sure to remove it at the end of the program
+TMP_DIR=$(mktemp -d /tmp/$me-XXXXXXXXX)
+function cleanup {
+	rm -rf $TMP_DIR
+	cd $CURRENT_DIR
+}
+trap cleanup EXIT
+
+if [ $COMMIT_ISH != HEAD ]
+then
+	# check if .gitmodules file has changed between HEAD and COMMIT_ISH.
+	if ! git --git-dir=$GITDIR/.git diff --quiet --exit-code HEAD $COMMIT_ISH -- .gitmodules
+	then
+		# .gitmodules and hence the git submodules have changes since $COMMIT_ISH
+		echo "$me : git submodules have changed since $COMMIT_ISH ."
+		echo "$me cannot create an archive in that case (not yet implemented). Exiting."
+		exit 1
+	fi
+fi
+
+function get_commit_ish_with_changes {
+	# for a certain git repository, get a commit-ish to archive
+	# which will include the (staged and unstaged) changes if any
+	local gitdir=$1
+
+	# we try to create an intermediate stash which includes the (staged and unstaged) changes
+	cd $1
+	STASH_COMMIT_ISH=$(git -c user.name=$me -c user.email=$me stash create)
+	cd - >/dev/null
+	if [ -n "$STASH_COMMIT_ISH" ]
+	then
+		# there were really changes to stash
+		echo "$STASH_COMMIT_ISH"
+	else
+		# there were no changes to stash; HEAD will suffice
+		echo "HEAD"
+	fi
+}
+
+if [ $INCLUDE_CHANGES ]
+then
+	COMMIT_ISH=$(get_commit_ish_with_changes $GITDIR)
+fi
+
+# git does not have a method to create an archive including all submodules, so we need to work around that.
+# inspired by: https://ttboj.wordpress.com/2015/07/23/git-archive-with-submodules-and-tar-magic/
+
+TARFILE=$TMP_DIR/$(basename $OUTPUT_FILE).tar
+[ $VERBOSE ] && echo "$me : creating $TARFILE"
+git --git-dir=$GITDIR/.git archive --format=tar --prefix=$PREFIX $COMMIT_ISH > $TARFILE
+
+GIT_SUBMODULES=$(git config --file $GITDIR/.gitmodules --get-regexp path | awk '{ print $2 }')
+SUBMODULE_TARFILE=$TARFILE.sub
+for submodule in $GIT_SUBMODULES
+do
+	[ $VERBOSE ] && echo -e "\t\tadding submodule $submodule"
+
+	if ! [ -e $GITDIR/$submodule/.git ]
+	then
+		# if .git subdirectory does not exist, then 'git submodule update --init' was never run on this directory.
+		# 'git archive' will not work...
+		[ $VERBOSE ] && echo "$me : $submodule is not inited yet. Running 'git submodule update --init -- $submodule' to get its content."
+		cd $GITDIR
+		git submodule update --init -- $submodule
+	fi
+
+	SUBMODULE_COMMIT_ISH=HEAD
+	if [ $INCLUDE_CHANGES ]
+	then
+		SUBMODULE_COMMIT_ISH=$(get_commit_ish_with_changes $GITDIR/$submodule)
+	fi
+	cd $GITDIR/$submodule
+	git archive --prefix=${PREFIX}$submodule/ $SUBMODULE_COMMIT_ISH > $SUBMODULE_TARFILE
+	tar --concatenate --file=$TARFILE $SUBMODULE_TARFILE
+done
+
+[ $VERBOSE ] && echo -e "\t\tcompressing"
+gzip < $TARFILE > $OUTPUT_FILE
+echo "$me : wrote $OUTPUT_FILE"
