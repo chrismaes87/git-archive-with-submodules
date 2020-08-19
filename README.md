@@ -13,6 +13,9 @@ Defaults to HEAD if not specified
 - --include-changes
 	- include staged and unstaged changes in the archive
 	- NOTE: this flag makes sense only when archiving HEAD
+- -t | --tag
+	- Indicates that the [commit-ish] argument is a tag that should
+    - be passed to the submodules for use as well.
 - -o | --output-file <output_file>
 	- write archive to <output_file>.
 	- Defaults to directory name of this git repository with .tgz suffix

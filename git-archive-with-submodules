@@ -21,6 +21,8 @@ function print_help {
 	echo "	-o | --output-file <output_file>"
 	echo "		write archive to <output_file>."
 	echo "		Defaults to directory name of this git repository with .tgz suffix"
+	echo "  -t | --tag"
+	echo "      Mark [commit-ish] as a specific tag"
 	echo "	--prefix <prefix>/"
 	echo "		Prepend <prefix>/ to each filename in the archive."
 	echo "	-v | --verbose"
@@ -28,7 +30,7 @@ function print_help {
 	exit
 }
 
-REARRANGED_OPTIONS=$(getopt -o ho:v --long help,include-changes,output-file:,prefix:,verbose -- "$@")
+REARRANGED_OPTIONS=$(getopt -o hto:v --long help,include-changes,tag,output-file:,prefix:,verbose -- "$@")
 eval set -- "$REARRANGED_OPTIONS"
 
 COMMIT_ISH=HEAD
@@ -39,6 +41,7 @@ do
 		--include-changes ) INCLUDE_CHANGES=1; shift ;;
 		-o | --output-file ) OUTPUT_FILE=$2; shift 2 ;;
 		--prefix ) PREFIX="$2"; shift 2 ;;
+		-t | --tag ) IS_TAG=1; shift ;;
 		-v | --verbose ) VERBOSE=1; shift ;;
 		-- )
 			shift; # skip --
@@ -144,7 +147,13 @@ do
 		git submodule update --init -- $submodule
 	fi
 
-	SUBMODULE_COMMIT_ISH=HEAD
+	if [ $IS_TAG ]; then
+		SUBMODULE_COMMIT_ISH=$COMMIT_ISH
+	else
+		SUBMODULE_COMMIT_ISH=HEAD
+	fi
+	[ $VERBOSE ] && echo -e "\t\tUsing $SUBMODULE_COMMIT_ISH for submodule checkout"
+
 	if [ $INCLUDE_CHANGES ]
 	then
 		SUBMODULE_COMMIT_ISH=$(get_commit_ish_with_changes $GITDIR/$submodule)
