@@ -98,6 +98,27 @@ subrepo/subfile2" "$(tar -tf test.tgz)"
 	rm test.tgz
 }
 
+testArchiveOlderVersion()
+{
+	cd subrepo
+	touch subfile2
+	git add subfile2
+	git -c user.name=dummy -c user.email=dummy@mail.com commit -m "add subfile2" > /dev/null
+	cd ..
+	touch superfile2
+	git add superfile2
+	git add subrepo
+	git -c user.name=dummy -c user.email=dummy@mail.com commit -m "add subrepo changes and superfile2" > /dev/null
+
+	# now try to create an archive from the previous commit.
+	$root_dir/git-archive-with-submodules -o test.tgz HEAD~ > /dev/null
+	assertEquals ".gitmodules
+subrepo/
+superfile1
+subrepo/
+subrepo/subfile1" "$(tar -tf test.tgz)"
+}
+
 # load shunit2
 . /etc/os-release
 if [ "$ID_LIKE" == "debian" ]
