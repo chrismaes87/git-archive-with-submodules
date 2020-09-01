@@ -19,14 +19,14 @@ oneTimeSetUp()
 	git init >/dev/null
 	touch subfile1
 	git add subfile1
-	git -c user.name=macq-build -c user.email=macq-build@macq.eu commit -m "add subfile1" > /dev/null
+	git -c user.name=dummy -c user.email=dummy@mail.com commit -m "add subfile1" > /dev/null
 	cd $repo
 	git init >/dev/null
 	git submodule add $subrepo subrepo 2>/dev/null
 	touch superfile1
 	git add superfile1
 	git add -A
-	git -c user.name=macq-build -c user.email=macq-build@macq.eu commit -m "add subrepo and superfile1" > /dev/null
+	git -c user.name=dummy -c user.email=dummy@mail.com commit -m "add subrepo and superfile1" > /dev/null
 	cd $WORKDIR
 }
 
@@ -73,6 +73,16 @@ subrepo/
 superfile1
 subrepo/
 subrepo/subfile1" "$(tar -tf test.tgz)"
+
+	# now with --include-changes, the unstaged changes should be included
+	$root_dir/git-archive-with-submodules -o test.tgz --include-changes > /dev/null
+	assertEquals ".gitmodules
+subrepo/
+superfile1
+superfile2
+subrepo/
+subrepo/subfile1
+subrepo/subfile2" "$(tar -tf test.tgz)"
 
 	rm test.tgz
 }
