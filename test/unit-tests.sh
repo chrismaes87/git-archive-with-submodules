@@ -58,6 +58,17 @@ subrepo/
 subrepo/subfile1" "$(tar -tf test.tgz)"
 }
 
+testArchiveHeadWithPrefix()
+{
+	$root_dir/git-archive-with-submodules -o test.tgz --prefix prefix/ > /dev/null
+	assertEquals "prefix/
+prefix/.gitmodules
+prefix/subrepo/
+prefix/superfile1
+prefix/subrepo/
+prefix/subrepo/subfile1" "$(tar -tf test.tgz)"
+}
+
 testArchiveWithUntrackedChanges()
 {
 	touch superfile2
