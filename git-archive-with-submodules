@@ -117,6 +117,20 @@ function get_commit_ish_with_changes {
 	fi
 }
 
+function get_submodule_commit_at_super_commit {
+	local submodule_path=$1
+	local super_commit=$2
+	submodule_parent_dir=$(dirname $submodule_path)
+	submodule_basename=$(basename $submodule_path)
+	while read mode type hash dir
+	do
+		if [ $dir == $submodule_basename ]
+		then
+			echo $hash
+		fi
+	done < <(git --git-dir=$GITDIR/.git ls-tree $super_commit:$submodule_parent_dir/)
+}
+
 if [ $INCLUDE_CHANGES ]
 then
 	COMMIT_ISH=$(get_commit_ish_with_changes $GITDIR)
@@ -144,10 +158,11 @@ do
 		git submodule update --init -- $submodule
 	fi
 
-	SUBMODULE_COMMIT_ISH=HEAD
 	if [ $INCLUDE_CHANGES ]
 	then
 		SUBMODULE_COMMIT_ISH=$(get_commit_ish_with_changes $GITDIR/$submodule)
+	else
+		SUBMODULE_COMMIT_ISH=$(get_submodule_commit_at_super_commit $submodule $COMMIT_ISH)
 	fi
 	cd $GITDIR/$submodule
 	git archive --prefix=${PREFIX}$submodule/ $SUBMODULE_COMMIT_ISH > $SUBMODULE_TARFILE
